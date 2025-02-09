@@ -55,7 +55,26 @@ if (!userPrompt) {
 
 // Define the updated suffix indicating segmentation and best practices
 const suffix =
-  "Segment all necessary stages to achieve the prompt’s objective into file names that reflect their main generative function. Write a global project context that includes the central objective, the current objective of each function, the schemas of previously generated files, and their position in the chain. Then, create a Deno script that generates these files and executes them one by one, ensuring that each file includes a prompt to the same API using the current script's code as context. The final project must be segmented following best software architecture practices based on the project's needs: files that form the final project should be placed in the 'project' subfolder, while generator files should remain in the parent folder. If the task is segmentable, each file must include this same suffix; otherwise, leave it without a suffix.";
+  `
+    Segment all necessary stages to achieve the prompt’s objective 
+    into file names that reflect their main generative function. 
+    Write a global project context that includes the central objective, 
+    the current objective of each function, the schemas of previously generated files, 
+    and their position in the chain. 
+    
+    Then, create a Deno script that generates these files and executes them one by one, 
+    ensuring that each file includes a prompt to the same API 
+    using the current script's code as context. 
+    
+    The final project must be segmented following best software architecture practices 
+    based on the project's needs: 
+    
+    files that form the final project should be placed in the 'project' subfolder, 
+    while generator files should remain in the parent folder. 
+    
+    If the task is segmentable, each file must include this same suffix; 
+    otherwise, leave it without a suffix.
+  `;
 
 // Concatenate the user's prompt with the suffix
 const extendedPrompt = `${userPrompt}\n${suffix}`;
