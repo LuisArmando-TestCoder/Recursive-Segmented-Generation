@@ -228,6 +228,12 @@ async function processFileNode(
 
         If the code meets the objectives and best practices, respond with exactly "approved" (no extra text).
         Otherwise, provide only the updated code with no additional commentary, explanations, or formatting.
+
+        Do not include any additional commentary or markdown formatting.
+
+        Generate only the raw code without any explanations, annotations, or formatting. 
+        Do not include triple backticks (\` \`\`\` \`), language labels, or any surrounding text. 
+        Just return the code itself, nothing else.
     `;
     const auditResponse = await callGPT4(auditPrompt);
     if (auditResponse.toLowerCase().includes("approved")) {
@@ -294,6 +300,12 @@ async function main() {
       <filename>: <description>
       Do not include any additional commentary or markdown formatting.
       Each generated file must include a prompt to the same API using the current script's code as context.
+
+      Do not include any additional commentary or markdown formatting.
+
+      Generate only the raw code without any explanations, annotations, or formatting. 
+      Do not include triple backticks (\` \`\`\` \`), language labels, or any surrounding text. 
+      Just return the code itself, nothing else.
   `;
 
   // Generate global context inside the project directory.
