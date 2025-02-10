@@ -1,9 +1,30 @@
-#!/usr/bin/env deno run --allow-read --allow-write --allow-net --allow-env
+#!/usr/bin/env -S deno run --allow-read --allow-write --allow-net --allow-env
+
+/// <reference lib="deno.ns" />
 
 import { config } from "https://deno.land/x/dotenv/mod.ts";
-import { join, resolve, dirname } from "https://deno.land/std/path/mod.ts";
+import { join, resolve } from "https://deno.land/std/path/mod.ts";
 
+// -------------------------------------
+// Utility function to ensure a directory exists (if not, create it).
+// -------------------------------------
+async function ensureDirectoryExists(dir: string) {
+  try {
+    await Deno.stat(dir);
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) {
+      await Deno.mkdir(dir, { recursive: true });
+      console.log(`Directory created: ${dir}`);
+    } else {
+      console.error(`Error accessing directory ${dir}:`, error);
+      Deno.exit(1);
+    }
+  }
+}
+
+// -------------------------------------
 // Load environment variables from .env file
+// -------------------------------------
 const env = config();
 const API_KEY = env["API_KEY"];
 if (!API_KEY) {
@@ -11,75 +32,67 @@ if (!API_KEY) {
   Deno.exit(1);
 }
 
-// Determine the base path from arguments or use the current working directory
-const basePath = Deno.args[0] ? resolve(Deno.args[0]) : Deno.cwd();
-
-// Ensure the basePath exists; if not, create it.
-try {
-  const stat = await Deno.stat(basePath);
-  if (!stat.isDirectory) {
-    console.error(`Base path is not a directory: ${basePath}`);
-    Deno.exit(1);
-  }
-} catch (e) {
-  if (e instanceof Deno.errors.NotFound) {
-    try {
-      await Deno.mkdir(basePath, { recursive: true });
-      console.log(`Base directory created: ${basePath}`);
-    } catch (err) {
-      console.error("Error creating base directory:", err);
-      Deno.exit(1);
-    }
-  } else {
-    console.error("Error accessing base directory:", e);
-    Deno.exit(1);
-  }
+// -------------------------------------
+// 1) Prompt for an absolute/relative path (default to current directory)
+// -------------------------------------
+const userInputPath = prompt(
+  "1) Enter the absolute or relative path for your project folder (Press Enter for current folder): "
+);
+let basePath: string;
+if (!userInputPath) {
+  basePath = Deno.cwd();
+} else {
+  basePath = resolve(userInputPath);
 }
+await ensureDirectoryExists(basePath);
 
-// Define the path for the final project, inside a subfolder "project"
-const projectDir = join(basePath, "project");
-try {
-  await Deno.mkdir(projectDir, { recursive: true });
-  console.log(`Project directory created or already exists: ${projectDir}`);
-} catch (error) {
-  console.error("Error creating the 'project' directory:", error);
-  Deno.exit(1);
-}
+// -------------------------------------
+// 2) Prompt for a project name (optional, defaults to 'project')
+// -------------------------------------
+const userProjectName = prompt(
+  "2) Enter your project name (optional, defaults to 'project'): "
+);
+const projectName = userProjectName?.trim() || "project";
 
-// Read the user's prompt from the terminal
-const userPrompt = prompt("Enter your prompt: ");
+// Create the project's main folder inside basePath
+const projectDir = join(basePath, projectName);
+await ensureDirectoryExists(projectDir);
+
+// -------------------------------------
+// 3) Prompt for the main user prompt
+// -------------------------------------
+const userPrompt = String(prompt("3) Enter your prompt: "));
 if (!userPrompt) {
   console.error("No prompt received.");
   Deno.exit(1);
 }
 
-// Define the updated suffix indicating segmentation and best practices
-const suffix =
-  `
-    Segment all necessary stages to achieve the prompt’s objective 
-    into file names that reflect their main generative function. 
-    Write a global project context that includes the central objective, 
-    the current objective of each function, the schemas of previously generated files, 
-    and their position in the chain. 
-    
-    Then, create a Deno script that generates these files and executes them one by one, 
-    ensuring that each file includes a prompt to the same API 
-    using the current script's code as context. 
-    
-    The final project must be segmented following best software architecture practices 
-    based on the project's needs: 
-    
-    files that form the final project should be placed in the 'project' subfolder, 
-    while generator files should remain in the parent folder. 
-    
-    If the task is segmentable, each file must include this same suffix; 
-    otherwise, leave it without a suffix.
-  `;
+// -------------------------------------
+// Define the suffix (project context) instructing GPT-4 to segment the project
+// -------------------------------------
+const suffix = `
+  Segment all necessary stages to achieve the prompt’s 
+  objective into file names that reflect their main generative function. 
+  Write a global project context that includes the central objective, 
+  the current objective of each function, the schemas of previously generated files, 
+  and their position in the chain. 
+  Then, create a Deno script that generates these files and executes them one by one, 
+  ensuring that each file includes a prompt to the same API using the current script's code as context. 
+  The final project must be segmented following best software architecture practices based on the project's needs: 
+  files that form the final project should be placed in the designated project subfolder, 
+  while generator files should remain in the parent folder. 
+  If the task is segmentable, each file must include this same suffix; 
+  otherwise, leave it without a suffix.
+`;
 
-// Concatenate the user's prompt with the suffix
+// -------------------------------------
+// Combine the user's prompt with the suffix
+// -------------------------------------
 const extendedPrompt = `${userPrompt}\n${suffix}`;
 
+// -------------------------------------
 // Function to call the GPT-4 API
+// -------------------------------------
 async function callGPT4(promptText: string): Promise<string> {
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -99,114 +112,205 @@ async function callGPT4(promptText: string): Promise<string> {
   }
 
   const data = await response.json();
+  // Assumes the response has data.choices[0].message.content
   return data.choices[0].message.content;
 }
 
-// Function to determine the file writing path and execution directory
+// -------------------------------------
+// Resolve file paths so that all files are placed inside the project directory.
+// -------------------------------------
 function resolveFilePath(filename: string): {
   filePath: string;
   workDir: string;
 } {
-  if (filename.startsWith("project/")) {
-    const relativePath = filename.substring("project/".length);
-    return { filePath: join(projectDir, relativePath), workDir: projectDir };
-  }
-  return { filePath: join(basePath, filename), workDir: basePath };
+  // All files will be placed inside the projectDir.
+  return { filePath: join(projectDir, filename), workDir: projectDir };
 }
 
-// Function to audit the generated project files using GPT-4
-async function auditProject(
-  generatedFiles: Array<{ filename: string }>,
-  projectContext: string
-): Promise<void> {
-  const fileList = generatedFiles.map((file) => file.filename).join("\n");
-  const auditPrompt =
-    "Audit the generated project files for adherence to the intended architecture and project context. " +
-    "The project context is as follows:\n" +
-    projectContext +
-    "\n\n" +
-    "The following files were generated:\n" +
-    fileList +
-    "\n\n" +
-    "Please provide an audit report discussing whether the files adhere to the intended segmentation and software architecture best practices, and suggest any improvements.";
-
-  console.log("Sending audit prompt to GPT-4...");
-  try {
-    const auditResponse = await callGPT4(auditPrompt);
-    console.log("Audit Report from GPT-4:\n", auditResponse);
-  } catch (error) {
-    console.error("Error during audit API call:", error);
-  }
+// -------------------------------------
+// Step 1: Generate Global Context
+// -------------------------------------
+async function generateGlobalContext(
+  userPrompt: string,
+  baseSuffix: string
+): Promise<string> {
+  const promptForContext = `${userPrompt}\n${baseSuffix}\nPlease provide a high-level global context for the project.`;
+  const globalContext = await callGPT4(promptForContext);
+  await Deno.writeTextFile(
+    join(projectDir, "global_context.txt"),
+    globalContext
+  );
+  return globalContext;
 }
 
-// Main function orchestrating the project generation
-async function main() {
-  try {
-    console.log("Sending extended prompt to GPT-4...");
-    const gptResponse = await callGPT4(extendedPrompt);
-    console.log("GPT-4 response received.");
-
-    // Assumption 1: The response is valid JSON containing a "files" array.
-    let projectData: { files: Array<{ filename: string; content: string }> } = {
-      files: [],
-    };
-    try {
-      projectData = JSON.parse(gptResponse);
-    } catch (e) {
-      console.error("Error parsing GPT-4 response as JSON.");
-      console.log("Received content:", gptResponse);
-      Deno.exit(1);
-    }
-
-    if (!projectData.files || !Array.isArray(projectData.files)) {
-      console.error("The response does not contain a file list in 'files'.");
-      Deno.exit(1);
-    }
-
-    // Read the content of the current script for context
-    const currentScriptPath = new URL(import.meta.url).pathname;
-    const currentScript = await Deno.readTextFile(currentScriptPath);
-
-    // Process each file defined in the response
-    for (const file of projectData.files) {
-      const { filePath, workDir } = resolveFilePath(file.filename);
-      const contextHeader = `/* Context from the main script:\n${currentScript}\n*/\n\n`;
-      const fileContent = contextHeader + file.content;
-
-      const fileDir = dirname(filePath);
-      await Deno.mkdir(fileDir, { recursive: true });
-
-      await Deno.writeTextFile(filePath, fileContent);
-      console.log(`File generated: ${filePath}`);
-
-      console.log(`Executing ${filePath}...`);
-      const process = Deno.run({
-        cmd: ["deno", "run", "--allow-read", "--allow-net", filePath],
-        cwd: workDir,
-        stdout: "piped",
-        stderr: "piped",
-      });
-
-      const { code } = await process.status();
-      const rawOutput = await process.output();
-      const rawError = await process.stderrOutput();
-      process.close();
-
-      const output = new TextDecoder().decode(rawOutput);
-      const errorOutput = new TextDecoder().decode(rawError);
-
-      if (code === 0) {
-        console.log(`Successfully executed ${filePath}:\n${output}`);
-      } else {
-        console.error(`Error executing ${filePath}:\n${errorOutput}`);
+// -------------------------------------
+// Function to parse the plain text project structure
+// Expected format per line: <filename>: <description>
+// -------------------------------------
+function parseStructureText(
+  text: string
+): Array<{ filename: string; description: string }> {
+  const lines = text.split("\n").filter((line) => line.trim() !== "");
+  const files = [];
+  for (const line of lines) {
+    // Assuming a format like: "game_setup.py: Set up the game environment using Pygame."
+    const parts = line.split(":");
+    if (parts.length >= 2) {
+      const filename = parts.shift()?.trim();
+      const description = parts.join(":").trim();
+      if (filename && description) {
+        files.push({ filename, description });
       }
     }
+  }
+  return files;
+}
 
-    // After file generation and execution, perform an audit of the project
-    await auditProject(projectData.files, extendedPrompt);
-  } catch (error) {
-    console.error("Error in the process:", error);
+// -------------------------------------
+// Step 2: Generate Project Structure (as plain text)
+// -------------------------------------
+async function generateProjectStructure(
+  userPrompt: string,
+  baseSuffix: string,
+  globalContext: string
+): Promise<Array<{ filename: string; description: string }>> {
+  const promptForStructure = `
+      Using the following global context:
+      ${globalContext}
+      
+      And the base prompt:
+      ${userPrompt}
+      
+      plus these segmentation instructions:
+      ${baseSuffix}
+      
+      Please provide a list of files required for the project.
+      Each file should be on a separate line in the following format:
+      <filename>: <description>
+      Do not include any additional commentary or markdown formatting.
+  `;
+  const structureText = await callGPT4(promptForStructure);
+  await Deno.writeTextFile(
+    join(projectDir, "project_structure.txt"),
+    structureText
+  );
+  return parseStructureText(structureText);
+}
+
+// -------------------------------------
+// Step 3: Recursive File Generation and Audit
+// -------------------------------------
+async function processFileNode(
+  fileNode: { filename: string; description: string },
+  context: string
+) {
+  // Generate file content based on its description and context.
+  const filePrompt = `
+      Context:
+      ${context}
+      
+      File Objective: ${fileNode.description}
+      
+      Please generate the complete content for the file '${fileNode.filename}'.
+      Ensure it adheres to best practices and includes necessary modular segmentation.
+      Return only the file content.
+  `;
+  let fileContent = await callGPT4(filePrompt);
+
+  // Audit loop: verify the file content is appropriate.
+  let approved = false;
+  while (!approved) {
+    const auditPrompt = `
+        Please audit the following file content strictly in the context of the project:
+        ${fileContent}
+
+        The file is supposed to accomplish: ${fileNode.description}
+
+        If the code meets the objectives and best practices, respond with exactly "approved" (no extra text).
+        Otherwise, provide only the updated code with no additional commentary, explanations, or formatting.
+    `;
+    const auditResponse = await callGPT4(auditPrompt);
+    if (auditResponse.toLowerCase().includes("approved")) {
+      approved = true;
+    } else {
+      // If changes are suggested, update file content and re-audit.
+      fileContent = auditResponse;
+    }
+  }
+
+  // Write the final file inside the project directory.
+  const { filePath } = resolveFilePath(fileNode.filename);
+  await Deno.writeTextFile(filePath, fileContent);
+  console.log(`Generated and audited file: ${filePath}`);
+
+  // Optionally, execute the file if it is a script.
+  if (fileNode.filename.endsWith(".py") || fileNode.filename.endsWith(".js")) {
+    console.log(`Executing ${filePath}...`);
+    const process = Deno.run({
+      cmd: fileNode.filename.endsWith(".py")
+        ? ["python", filePath]
+        : ["deno", "run", filePath],
+      stdout: "piped",
+      stderr: "piped",
+    });
+    const status = await process.status();
+    const output = new TextDecoder().decode(await process.output());
+    const error = new TextDecoder().decode(await process.stderrOutput());
+    process.close();
+    if (status.code === 0) {
+      console.log(`Execution of ${filePath} successful:\n${output}`);
+    } else {
+      console.error(`Execution of ${filePath} failed:\n${error}`);
+    }
   }
 }
 
+// -------------------------------------
+// Recursive function to traverse the file list (flat structure)
+// -------------------------------------
+async function traverseStructure(
+  files: Array<{ filename: string; description: string }>,
+  context: string
+) {
+  for (const node of files) {
+    await processFileNode(node, context);
+  }
+}
+
+// -------------------------------------
+// Main flow
+// -------------------------------------
+async function main() {
+  if (!userPrompt) {
+    console.error("No prompt provided.");
+    Deno.exit(1);
+  }
+  const baseSuffix = `
+      Segment all necessary stages to achieve the prompt’s objective into file names that reflect their main generative function.
+      Write a global project context that includes the central objective, the current objective of each function, 
+      the schemas of previously generated files, and their position in the chain.
+      Then, generate a list of files required for the project.
+      Each file should be on a separate line in the following format:
+      <filename>: <description>
+      Do not include any additional commentary or markdown formatting.
+      Each generated file must include a prompt to the same API using the current script's code as context.
+  `;
+
+  // Generate global context inside the project directory.
+  const globalContext = await generateGlobalContext(userPrompt, baseSuffix);
+
+  // Generate project structure as plain text and parse it into file nodes.
+  const projectStructure = await generateProjectStructure(
+    userPrompt,
+    baseSuffix,
+    globalContext
+  );
+
+  // Process each file node based on the parsed structure.
+  await traverseStructure(projectStructure, globalContext);
+}
+
+// -------------------------------------
+// Invoke main
+// -------------------------------------
 main();
