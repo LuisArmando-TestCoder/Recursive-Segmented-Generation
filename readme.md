@@ -53,14 +53,14 @@ After installing, you need to make sure your terminal knows where to find the `r
 
   Open PowerShell or Command Prompt and run:
 
-  ```sh
-  set PATH=%PATH%;C:\Users\<YourUsername>\.deno\bin
+  ```powershell
+  $env:PATH += ";C:\Users\<YourUsername>\.deno\bin"
   ```
 
   or
 
-  ```powershell
-  $env:PATH += ";C:\Users\<YourUsername>\.deno\bin"
+  ```sh
+  set PATH=%PATH%;C:\Users\<YourUsername>\.deno\bin
   ```
 
   Replace `<YourUsername>` with your actual Windows username.
