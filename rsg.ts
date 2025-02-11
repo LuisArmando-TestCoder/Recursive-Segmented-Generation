@@ -67,28 +67,11 @@ if (!userPrompt) {
   Deno.exit(1);
 }
 
-// -------------------------------------
-// Define the suffix (project context) instructing GPT-4 to segment the project
-// -------------------------------------
-const suffix = `
-  Segment all necessary stages to achieve the prompt’s 
-  objective into file names that reflect their main generative function. 
-  Write a global project context that includes the central objective, 
-  the current objective of each function, the schemas of previously generated files, 
-  and their position in the chain. 
-  Then, create a Deno script that generates these files and executes them one by one, 
-  ensuring that each file includes a prompt to the same API using the current script's code as context. 
-  The final project must be segmented following best software architecture practices based on the project's needs: 
-  files that form the final project should be placed in the designated project subfolder, 
-  while generator files should remain in the parent folder. 
-  If the task is segmentable, each file must include this same suffix; 
-  otherwise, leave it without a suffix.
-`;
+function getBacktipsContent(content: string) {
+  const backtipsContentRegex = /```.*?$([\s\S]*?)^```/gm;
 
-// -------------------------------------
-// Combine the user's prompt with the suffix
-// -------------------------------------
-const extendedPrompt = `${userPrompt}\n${suffix}`;
+  return backtipsContentRegex.exec(content)?.[1] || content;
+}
 
 // -------------------------------------
 // Function to call the GPT-4 API
@@ -215,7 +198,7 @@ async function processFileNode(
       Ensure it adheres to best practices and includes necessary modular segmentation.
       Return only the file content.
   `;
-  let fileContent = await callGPT4(filePrompt);
+  let fileContent = getBacktipsContent(await callGPT4(filePrompt));
 
   // Audit loop: verify the file content is appropriate.
   let approved = false;
@@ -234,13 +217,16 @@ async function processFileNode(
         Generate only the raw code without any explanations, annotations, or formatting. 
         Do not include triple backticks (\` \`\`\` \`), language labels, or any surrounding text. 
         Just return the code itself, nothing else.
+
+        When you are going to respond, and display the audit, don't display the audit, 
+        respond, only, with the entirety of the embedded code.
     `;
     const auditResponse = await callGPT4(auditPrompt);
     if (auditResponse.toLowerCase().includes("approved")) {
       approved = true;
     } else {
       // If changes are suggested, update file content and re-audit.
-      fileContent = auditResponse;
+      fileContent = getBacktipsContent(auditResponse);
     }
   }
 
