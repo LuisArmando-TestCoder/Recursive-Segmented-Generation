@@ -5,11 +5,6 @@
 import { config } from "https://deno.land/x/dotenv/mod.ts";
 import { join, resolve } from "https://deno.land/std/path/mod.ts";
 
-// [LOADING ADDED] >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-/**
- * Rainbow-style loading animation in the console.
- * This runs in parallel while files are being generated.
- */
 let loading = false;
 const frames = ["🌈", "🔴", "🟠", "🟡", "🟢", "🔵", "🟣"];
 
@@ -25,11 +20,7 @@ async function startLoadingAnimation() {
   }
   console.log("\n✅ All files created!");
 }
-// [LOADING ADDED] <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
-// -------------------------------------
-// Utility function to ensure a directory exists (if not, create it).
-// -------------------------------------
 async function ensureDirectoryExists(dir: string) {
   try {
     await Deno.stat(dir);
@@ -44,9 +35,6 @@ async function ensureDirectoryExists(dir: string) {
   }
 }
 
-// -------------------------------------
-// Load environment variables from .env file
-// -------------------------------------
 const env = config();
 const API_KEY = env["API_KEY"];
 if (!API_KEY) {
@@ -54,9 +42,6 @@ if (!API_KEY) {
   Deno.exit(1);
 }
 
-// -------------------------------------
-// 1) Prompt for an absolute/relative path (default to current directory)
-// -------------------------------------
 const userInputPath = prompt(
   "1) Enter the absolute or relative path for your project folder (Press Enter for current folder): "
 );
@@ -68,21 +53,14 @@ if (!userInputPath) {
 }
 await ensureDirectoryExists(basePath);
 
-// -------------------------------------
-// 2) Prompt for a project name (optional, defaults to 'project')
-// -------------------------------------
 const userProjectName = prompt(
   "2) Enter your project name (optional, defaults to 'project'): "
 );
 const projectName = userProjectName?.trim() || "project";
 
-// Create the project's main folder inside basePath
 const projectDir = join(basePath, projectName);
 await ensureDirectoryExists(projectDir);
 
-// -------------------------------------
-// 3) Prompt for the main user prompt
-// -------------------------------------
 const userPrompt = String(prompt("3) Enter your prompt: "));
 if (!userPrompt) {
   console.error("No prompt received.");
@@ -94,9 +72,6 @@ function getBacktipsContent(content: string) {
   return backtipsContentRegex.exec(content)?.[1] || content;
 }
 
-// -------------------------------------
-// Function to call the GPT-4 API
-// -------------------------------------
 async function callGPT4(promptText: string): Promise<string> {
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -116,24 +91,16 @@ async function callGPT4(promptText: string): Promise<string> {
   }
 
   const data = await response.json();
-  // Assumes the response has data.choices[0].message.content
   return data.choices[0].message.content;
 }
 
-// -------------------------------------
-// Resolve file paths so that all files are placed inside the project directory.
-// -------------------------------------
 function resolveFilePath(filename: string): {
   filePath: string;
   workDir: string;
 } {
-  // All files will be placed inside the projectDir.
   return { filePath: join(projectDir, filename), workDir: projectDir };
 }
 
-// -------------------------------------
-// Step 1: Generate Global Context
-// -------------------------------------
 async function generateGlobalContext(
   userPrompt: string,
   baseSuffix: string
@@ -147,10 +114,6 @@ async function generateGlobalContext(
   return globalContext;
 }
 
-// -------------------------------------
-// Function to parse the plain text project structure
-// Expected format per line: <filename>: <description>
-// -------------------------------------
 function parseStructureText(
   text: string
 ): Array<{ filename: string; description: string }> {
@@ -170,9 +133,6 @@ function parseStructureText(
   return files;
 }
 
-// -------------------------------------
-// Step 2: Generate Project Structure (as plain text)
-// -------------------------------------
 async function generateProjectStructure(
   userPrompt: string,
   baseSuffix: string,
@@ -201,14 +161,10 @@ async function generateProjectStructure(
   return parseStructureText(structureText);
 }
 
-// -------------------------------------
-// Step 3: Recursive File Generation and Audit
-// -------------------------------------
 async function processFileNode(
   fileNode: { filename: string; description: string },
   context: string
 ) {
-  // Generate file content based on its description and context.
   const filePrompt = 
       `Context:
       ${context}
@@ -252,7 +208,7 @@ async function processFileNode(
 
   // Write the final file inside the project directory.
   const { filePath } = resolveFilePath(fileNode.filename);
-  await Deno.writeTextFile(filePath, fileContent);
+  await Deno.writeTextFile(filePath, getBacktipsContent(fileContent));
   console.log(`Generated and audited file: ${filePath}`);
 
   // Optionally, execute the file if it is a script.
@@ -277,9 +233,6 @@ async function processFileNode(
   }
 }
 
-// -------------------------------------
-// Recursive function to traverse the file list (flat structure)
-// -------------------------------------
 async function traverseStructure(
   files: Array<{ filename: string; description: string }>,
   context: string
@@ -289,9 +242,6 @@ async function traverseStructure(
   }
 }
 
-// -------------------------------------
-// Main flow
-// -------------------------------------
 async function main() {
   if (!userPrompt) {
     console.error("No prompt provided.");
@@ -314,32 +264,20 @@ async function main() {
       Just return the code itself, nothing else.
       `;
 
-  // Generate global context inside the project directory.
   const globalContext = await generateGlobalContext(userPrompt, baseSuffix);
 
-  // Generate project structure as plain text and parse it into file nodes.
   const projectStructure = await generateProjectStructure(
     userPrompt,
     baseSuffix,
     globalContext
   );
 
-  // [LOADING ADDED] >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-  // Start the loading animation before file generation
   const loadingAnimation = startLoadingAnimation();
-  // [LOADING ADDED] <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
-  // Process each file node based on the parsed structure.
   await traverseStructure(projectStructure, globalContext);
 
-  // [LOADING ADDED] >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-  // Stop the loading animation after all files are generated
   loading = false;
   await loadingAnimation;
-  // [LOADING ADDED] <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 }
 
-// -------------------------------------
-// Invoke main
-// -------------------------------------
 main();
