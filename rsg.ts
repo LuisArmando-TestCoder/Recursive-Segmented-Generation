@@ -5,6 +5,28 @@
 import { config } from "https://deno.land/x/dotenv/mod.ts";
 import { join, resolve } from "https://deno.land/std/path/mod.ts";
 
+// [LOADING ADDED] >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+/**
+ * Rainbow-style loading animation in the console.
+ * This runs in parallel while files are being generated.
+ */
+let loading = false;
+const frames = ["🌈", "🔴", "🟠", "🟡", "🟢", "🔵", "🟣"];
+
+async function startLoadingAnimation() {
+  loading = true;
+  let i = 0;
+  while (loading) {
+    Deno.stdout.writeSync(
+      new TextEncoder().encode(`\rCreating files... ${frames[i]} `)
+    );
+    i = (i + 1) % frames.length;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  console.log("\n✅ All files created!");
+}
+// [LOADING ADDED] <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
 // -------------------------------------
 // Utility function to ensure a directory exists (if not, create it).
 // -------------------------------------
@@ -68,8 +90,7 @@ if (!userPrompt) {
 }
 
 function getBacktipsContent(content: string) {
-  const backtipsContentRegex = /```.*?$([\s\S]*?)^```/gm;
-
+  const backtipsContentRegex = /```.*?^```/gms;
   return backtipsContentRegex.exec(content)?.[1] || content;
 }
 
@@ -157,8 +178,8 @@ async function generateProjectStructure(
   baseSuffix: string,
   globalContext: string
 ): Promise<Array<{ filename: string; description: string }>> {
-  const promptForStructure = `
-      Using the following global context:
+  const promptForStructure = 
+      `Using the following global context:
       ${globalContext}
       
       And the base prompt:
@@ -171,7 +192,7 @@ async function generateProjectStructure(
       Each file should be on a separate line in the following format:
       <filename>: <description>
       Do not include any additional commentary or markdown formatting.
-  `;
+      `;
   const structureText = await callGPT4(promptForStructure);
   await Deno.writeTextFile(
     join(projectDir, "project_structure.txt"),
@@ -188,23 +209,22 @@ async function processFileNode(
   context: string
 ) {
   // Generate file content based on its description and context.
-  const filePrompt = `
-      Context:
+  const filePrompt = 
+      `Context:
       ${context}
       
       File Objective: ${fileNode.description}
       
       Please generate the complete content for the file '${fileNode.filename}'.
       Ensure it adheres to best practices and includes necessary modular segmentation.
-      Return only the file content.
-  `;
+      Return only the file content.`;
   let fileContent = getBacktipsContent(await callGPT4(filePrompt));
 
   // Audit loop: verify the file content is appropriate.
   let approved = false;
   while (!approved) {
-    const auditPrompt = `
-        Please audit the following file content strictly in the context of the project:
+    const auditPrompt = 
+        `Please audit the following file content strictly in the context of the project:
         ${fileContent}
 
         The file is supposed to accomplish: ${fileNode.description}
@@ -215,12 +235,12 @@ async function processFileNode(
         Do not include any additional commentary or markdown formatting.
 
         Generate only the raw code without any explanations, annotations, or formatting. 
-        Do not include triple backticks (\` \`\`\` \`), language labels, or any surrounding text. 
+        Do not include triple backticks (\`\`\`), language labels, or any surrounding text. 
         Just return the code itself, nothing else.
 
         When you are going to respond, and display the audit, don't display the audit, 
         respond, only, with the entirety of the embedded code.
-    `;
+        `;
     const auditResponse = await callGPT4(auditPrompt);
     if (auditResponse.toLowerCase().includes("approved")) {
       approved = true;
@@ -277,8 +297,8 @@ async function main() {
     console.error("No prompt provided.");
     Deno.exit(1);
   }
-  const baseSuffix = `
-      Segment all necessary stages to achieve the prompt’s objective into file names that reflect their main generative function.
+  const baseSuffix = 
+      `Segment all necessary stages to achieve the prompt’s objective into file names that reflect their main generative function.
       Write a global project context that includes the central objective, the current objective of each function, 
       the schemas of previously generated files, and their position in the chain.
       Then, generate a list of files required for the project.
@@ -290,9 +310,9 @@ async function main() {
       Do not include any additional commentary or markdown formatting.
 
       Generate only the raw code without any explanations, annotations, or formatting. 
-      Do not include triple backticks (\` \`\`\` \`), language labels, or any surrounding text. 
+      Do not include triple backticks (\`\`\`), language labels, or any surrounding text. 
       Just return the code itself, nothing else.
-  `;
+      `;
 
   // Generate global context inside the project directory.
   const globalContext = await generateGlobalContext(userPrompt, baseSuffix);
@@ -304,8 +324,19 @@ async function main() {
     globalContext
   );
 
+  // [LOADING ADDED] >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+  // Start the loading animation before file generation
+  const loadingAnimation = startLoadingAnimation();
+  // [LOADING ADDED] <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
   // Process each file node based on the parsed structure.
   await traverseStructure(projectStructure, globalContext);
+
+  // [LOADING ADDED] >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+  // Stop the loading animation after all files are generated
+  loading = false;
+  await loadingAnimation;
+  // [LOADING ADDED] <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 }
 
 // -------------------------------------

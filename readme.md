@@ -36,7 +36,7 @@ cd Recursive-Segmented-Generation
 To make it available system-wide, install the script globally (e.g., `rsg` as command name):
 
 ```sh
-deno install --global --allow-read --allow-write --allow-net --allow-env --name rsg ./rsg.ts
+deno install --global --allow-read --allow-write --allow-net --allow-env -f --name rsg ./rsg.ts
 ```
 
 Now you can run `rsg` from anywhere in your terminal.
