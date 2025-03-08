@@ -67,8 +67,8 @@ if (!userPrompt) {
   Deno.exit(1);
 }
 
-function getBacktipsContent(content: string) {
-  const backtipsContentRegex = /```.*?^```/gms;
+function getBacktipsContent(content) {
+  const backtipsContentRegex = /```.*?^(.*)```/gms;
   return backtipsContentRegex.exec(content)?.[1] || content;
 }
 
